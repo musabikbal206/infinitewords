@@ -1,0 +1,1376 @@
+<!DOCTYPE html>
+<html lang="en" class="transition-colors duration-300">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Infinite Multilingual Word Web</title>
+    
+    <!-- Tailwind CSS with Dark Mode Configuration -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        slate: {
+                            850: '#1e293b',
+                            900: '#0f172a',
+                        }
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'slideDown': 'slideDown 0.3s ease-out forwards',
+                    },
+                    keyframes: {
+                        slideDown: {
+                            '0%': { opacity: '0', transform: 'translateY(-10px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Vis.js Network -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+JP&family=Noto+Sans+KR&family=Noto+Sans+SC&family=Noto+Sans+Arabic&display=swap" rel="stylesheet">
+
+    <style>
+        body, html {
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Inter', 'Noto Sans JP', 'Noto Sans Arabic', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none; /* Prevent text selection for better app-like feel */
+        }
+        
+        #network {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* Initial Circular Input Styling */
+        .circle-input-wrapper {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+            transition: all 0.5s ease-out;
+        }
+        
+        .circle-input-wrapper.fade-out {
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.8);
+            pointer-events: none;
+        }
+
+        .circle-input {
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            text-align: center;
+            border: 3px solid #cbd5e1; /* slate-300 */
+            outline: none;
+            font-weight: 700;
+            font-size: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: all 0.3s ease;
+        }
+
+        .circle-input:focus {
+            border-color: #6366f1; /* indigo-500 */
+            box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.2);
+            transform: scale(1.05);
+        }
+
+        /* Dark mode overrides */
+        .dark .circle-input {
+            background-color: #1e293b; /* slate-850 */
+            border-color: #475569; /* slate-600 */
+            color: white;
+        }
+        .dark .circle-input:focus {
+            border-color: #818cf8; /* indigo-400 */
+        }
+
+        /* Backdrop */
+        #backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.3);
+            z-index: 90;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+            backdrop-filter: blur(2px);
+        }
+        #backdrop.active { opacity: 1; pointer-events: auto; }
+
+        /* Loading Overlay */
+        .loading-overlay {
+            backdrop-filter: blur(4px);
+        }
+        
+        /* Modal fixes */
+        #info-modal {
+            z-index: 110; 
+        }
+
+        /* --- NEW CHUNK STYLING --- */
+        .word-chunk {
+            cursor: pointer;
+            transition: all 0.2s;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-weight: 700;
+            box-shadow: 0 3px 0px rgba(0,0,0,0.15); /* Distinct 3D effect */
+            margin-bottom: 6px;
+            display: inline-block;
+            font-size: 1.1rem; 
+            user-select: none; /* Prevent selection on double tap */
+            -webkit-touch-callout: none; /* iOS disable context menu */
+        }
+        .word-chunk:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 0px rgba(0,0,0,0.15);
+            filter: brightness(1.1);
+        }
+        .word-chunk:active {
+            transform: translateY(1px);
+            box-shadow: 0 1px 0px rgba(0,0,0,0.15);
+        }
+        .word-chunk.active-word {
+            outline: 2px solid white;
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.6); /* Halo effect */
+            z-index: 10;
+            position: relative;
+        }
+
+        /* Role Colors - Block Style */
+        .role-subject { background-color: #2563eb; color: white; border-bottom: 3px solid #1e40af; }
+        .dark .role-subject { background-color: #1d4ed8; border-bottom-color: #1e3a8a; }
+
+        .role-verb { background-color: #dc2626; color: white; border-bottom: 3px solid #991b1b; }
+        .dark .role-verb { background-color: #b91c1c; border-bottom-color: #7f1d1d; }
+
+        .role-object { background-color: #059669; color: white; border-bottom: 3px solid #065f46; }
+        .dark .role-object { background-color: #047857; border-bottom-color: #064e3b; }
+
+        .role-modifier { background-color: #d97706; color: white; border-bottom: 3px solid #92400e; }
+        .dark .role-modifier { background-color: #b45309; border-bottom-color: #78350f; }
+
+        .role-other { background-color: #64748b; color: white; border-bottom: 3px solid #475569; }
+        .dark .role-other { background-color: #475569; border-bottom-color: #334155; }
+        
+        input { font-size: 16px !important; }
+
+        /* Custom Scrollbar for dark mode */
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
+        .dark .custom-scroll::-webkit-scrollbar-thumb { background-color: #475569; }
+    </style>
+</head>
+<body class="relative text-gray-800 bg-slate-50 dark:bg-slate-900 dark:text-gray-100 transition-colors duration-300">
+
+    <!-- Backdrop -->
+    <div id="backdrop" onclick="closeAllMenus()"></div>
+
+    <!-- UI Overlay Controls -->
+    <div class="absolute top-0 left-0 right-0 z-30 p-4 pointer-events-none flex justify-between items-start">
+        <!-- Left: Menu Toggle -->
+        <button onclick="toggleInfoPanel()" class="pointer-events-auto bg-white dark:bg-slate-800 shadow-lg w-12 h-12 rounded-full flex items-center justify-center text-gray-700 dark:text-gray-200 active:scale-95 transition border border-gray-100 dark:border-slate-700">
+            <i class="fas fa-bars text-xl"></i>
+        </button>
+
+        <!-- Right: Actions -->
+        <div class="pointer-events-auto flex flex-col items-end gap-2">
+            <!-- Top Row: Config -->
+            <div class="flex gap-2">
+                <!-- Dark Mode Toggle -->
+                <button onclick="toggleDarkMode()" class="bg-white dark:bg-slate-800 shadow-lg w-12 h-12 rounded-full flex items-center justify-center text-gray-700 dark:text-gray-200 active:scale-95 transition border border-gray-100 dark:border-slate-700">
+                    <i id="theme-icon" class="fas fa-moon text-lg"></i>
+                </button>
+                <!-- Restart/New Word Button -->
+                <button onclick="resetGame()" class="bg-white dark:bg-slate-800 shadow-lg w-12 h-12 rounded-full flex items-center justify-center text-indigo-600 dark:text-indigo-400 active:scale-95 transition border border-gray-100 dark:border-slate-700" title="New Word">
+                    <i class="fas fa-plus text-lg"></i>
+                </button>
+            </div>
+            
+            <!-- Second Row: Graph Actions -->
+            <div class="flex gap-2">
+                <button onclick="resetCamera()" class="bg-white dark:bg-slate-800 shadow-lg w-12 h-12 rounded-full flex items-center justify-center text-gray-700 dark:text-gray-200 active:scale-95 transition border border-gray-100 dark:border-slate-700">
+                    <i class="fas fa-compress-arrows-alt text-lg"></i>
+                </button>
+                <button onclick="exportGraph()" class="bg-white dark:bg-slate-800 shadow-lg w-12 h-12 rounded-full flex items-center justify-center text-gray-700 dark:text-gray-200 active:scale-95 transition border border-gray-100 dark:border-slate-700">
+                    <i class="fas fa-camera text-lg"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Panel / Legend / Settings -->
+    <div id="info-panel" class="absolute top-20 left-4 z-20 w-72 bg-white/95 dark:bg-slate-800/95 backdrop-blur shadow-xl rounded-2xl border border-gray-200 dark:border-slate-700 transform -translate-x-[120%] transition-transform duration-300 ease-in-out pointer-events-auto max-h-[80vh] overflow-y-auto">
+        <div class="p-4 space-y-6">
+            
+            <!-- API Key Section -->
+            <div class="bg-gray-50 dark:bg-slate-900 p-3 rounded-xl border border-gray-100 dark:border-slate-700">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2" data-i18n="settings">Settings</h3>
+                
+                <div class="space-y-4">
+                    <!-- API KEY -->
+                    <div>
+                        <label class="text-xs font-bold text-indigo-500 ml-1">GEMINI API KEY</label>
+                        <div class="relative mt-1">
+                            <input type="password" id="api-key-input" class="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-gray-900 dark:text-white focus:border-indigo-500 dark:focus:border-indigo-400 outline-none transition" placeholder="Paste Key Here">
+                            <i class="fas fa-key absolute left-2.5 top-2.5 text-gray-400 text-xs"></i>
+                        </div>
+                    </div>
+
+                    <!-- INTERFACE LANGUAGE -->
+                    <div class="pt-2 border-t border-gray-100 dark:border-slate-700">
+                        <label class="text-xs font-bold text-gray-500 dark:text-gray-400 ml-1" data-i18n="interfaceLang">INTERFACE LANGUAGE</label>
+                        <select id="interface-lang-select" onchange="changeInterfaceLang(this.value)" class="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-gray-900 dark:text-white focus:border-blue-500 outline-none transition cursor-pointer">
+                            <option value="en">English</option>
+                            <option value="fr">Français</option>
+                            <option value="es">Español</option>
+                            <option value="de">Deutsch</option>
+                            <option value="it">Italiano</option>
+                            <option value="tr">Türkçe</option>
+                        </select>
+                    </div>
+
+                    <!-- VOICE SETTINGS (NEW) -->
+                    <div class="pt-2 border-t border-gray-100 dark:border-slate-700">
+                         <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Voice / Audio</h3>
+                         
+                         <!-- Enable/Disable -->
+                         <div class="flex items-center justify-between mb-2">
+                             <label class="text-xs font-bold text-gray-500 dark:text-gray-400 ml-1">Enable Voice</label>
+                             <button id="voice-toggle-btn" onclick="toggleVoice()" class="w-10 h-5 bg-green-500 rounded-full relative transition-colors duration-200 focus:outline-none">
+                                 <div id="voice-toggle-circle" class="w-3 h-3 bg-white rounded-full absolute top-1 left-6 transition-all duration-200"></div>
+                             </button>
+                         </div>
+
+                         <!-- Speed Slider -->
+                         <div>
+                             <label class="text-xs font-bold text-gray-500 dark:text-gray-400 ml-1 flex justify-between">
+                                 <span>Speed</span>
+                                 <span id="speed-display" class="text-indigo-500">1.0x</span>
+                             </label>
+                             <input type="range" id="voice-speed" min="0.5" max="2.0" step="0.1" value="1.0" oninput="updateSpeedDisplay(this.value)" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-indigo-500">
+                         </div>
+                    </div>
+
+                    <!-- LEARNING LANGUAGE SETTINGS -->
+                    <div class="pt-2 border-t border-gray-100 dark:border-slate-700">
+                        <label class="text-xs font-bold text-gray-500 dark:text-gray-400 ml-1" data-i18n="targetLang">TARGET LANGUAGE (Learning)</label>
+                        <input type="text" id="target-lang-input" class="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-gray-900 dark:text-white focus:border-green-500 outline-none transition" value="English" placeholder="e.g. Japanese, Arabic">
+                    </div>
+                    
+                    <div>
+                        <label class="text-xs font-bold text-gray-500 dark:text-gray-400 ml-1" data-i18n="explainLang">EXPLANATION LANGUAGE</label>
+                        <input type="text" id="explain-lang-input" class="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-gray-900 dark:text-white focus:border-orange-500 outline-none transition" value="Turkish" placeholder="e.g. English">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div>
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2" data-i18n="controls">Controls</h3>
+                <div class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                    <div class="flex items-center gap-3"><i class="fas fa-hand-pointer text-blue-500 w-4"></i> <span data-i18n="tap"><strong>Tap:</strong> Expand Related</span></div>
+                    <div class="flex items-center gap-3"><i class="fas fa-hand-point-up text-purple-500 w-4"></i> <span data-i18n="longPress"><strong>Long Press:</strong> Details</span></div>
+                </div>
+            </div>
+
+            <!-- Legend -->
+            <div>
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2" data-i18n="colors">Graph Colors (Word Class)</h3>
+                <div class="space-y-1.5 text-xs font-medium grid grid-cols-2 gap-x-2 dark:text-gray-300">
+                    <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-blue-100 border border-blue-500"></div> <span data-i18n="noun">Noun</span></div>
+                    <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-red-100 border border-red-500"></div> <span data-i18n="verbType">Verb</span></div>
+                    <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-green-100 border border-green-500"></div> <span data-i18n="adj">Adjective</span></div>
+                    <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-yellow-100 border border-yellow-500"></div> <span data-i18n="adv">Adverb</span></div>
+                    <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-purple-100 border border-purple-500"></div> <span data-i18n="pronoun">Pronoun</span></div>
+                    <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-pink-100 border border-pink-500"></div> <span data-i18n="prep">Preposition</span></div>
+                    <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-orange-100 border border-orange-500"></div> <span data-i18n="conj">Conjunction</span></div>
+                    <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-gray-100 border border-gray-500"></div> <span data-i18n="other">Other</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- IMMERSIVE START INPUT -->
+    <div id="initial-input-container" class="circle-input-wrapper">
+        <input type="text" id="start-input" class="circle-input bg-white" placeholder="Type..." autocomplete="off" onkeypress="handleStartInput(event)">
+        <!-- Spinner inside the circle (hidden initially) -->
+        <div id="start-spinner" class="hidden absolute inset-0 flex items-center justify-center pointer-events-none">
+            <i class="fas fa-circle-notch fa-spin text-2xl text-indigo-500"></i>
+        </div>
+    </div>
+
+    <!-- Loading Overlay (Global) -->
+    <div id="global-loader" class="hidden absolute inset-0 z-40 loading-overlay flex flex-col items-center justify-center bg-white/50 dark:bg-slate-900/50">
+        <div class="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-2xl flex flex-col items-center border border-gray-100 dark:border-slate-700">
+            <div class="animate-spin rounded-full h-10 w-10 border-4 border-indigo-100 dark:border-indigo-900 border-t-indigo-600 dark:border-t-indigo-400 mb-3"></div>
+            <p class="text-indigo-900 dark:text-indigo-200 font-bold text-sm" id="loader-text">Thinking...</p>
+        </div>
+    </div>
+
+    <!-- Info Modal -->
+    <div id="info-modal" class="hidden absolute inset-0 flex items-end sm:items-center justify-center pointer-events-none">
+        <div class="pointer-events-auto bg-white dark:bg-slate-800 w-full sm:w-[90%] sm:max-w-xl sm:rounded-2xl rounded-t-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-[slideUp_0.3s_ease-out] border border-gray-200 dark:border-slate-700 relative">
+            
+            <!-- Modal Header -->
+            <div class="bg-gray-50 dark:bg-slate-900 p-5 border-b border-gray-100 dark:border-slate-700 flex justify-between items-center">
+                <div>
+                    <h2 id="modal-word" class="text-3xl font-black text-gray-800 dark:text-gray-100 capitalize tracking-tight">Word</h2>
+                    <span id="modal-pos" class="text-xs font-bold px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 uppercase">Loading...</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="playTTS(document.getElementById('modal-word').textContent)" class="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center hover:bg-indigo-200 dark:hover:bg-indigo-800 transition"><i class="fas fa-volume-up"></i></button>
+                    <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-gray-200 dark:bg-slate-700 text-gray-500 dark:text-gray-300 flex items-center justify-center hover:bg-gray-300 dark:hover:bg-slate-600 transition"><i class="fas fa-times"></i></button>
+                </div>
+            </div>
+            
+            <div class="p-6 overflow-y-auto custom-scroll dark:text-gray-200 relative">
+                <div id="modal-loader" class="hidden py-10 text-center"><i class="fas fa-circle-notch fa-spin text-3xl text-indigo-500 dark:text-indigo-400"></i></div>
+                
+                <div id="modal-content" class="space-y-6 hidden">
+                    <!-- Definition -->
+                    <div class="bg-indigo-50/50 dark:bg-indigo-900/20 p-4 rounded-xl border border-indigo-100 dark:border-indigo-800">
+                        <h3 class="text-[10px] font-bold uppercase tracking-wider text-indigo-400 dark:text-indigo-300 mb-1" data-i18n="definition">Definition</h3>
+                        <p id="modal-definition" class="text-gray-800 dark:text-gray-200 text-lg leading-relaxed font-medium">...</p>
+                    </div>
+
+                    <!-- Sentence Structure Analysis -->
+                    <div>
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2" data-i18n="structure">Structure Analysis</h3>
+                        <p class="text-[10px] text-gray-400 mb-2 italic" data-i18n="clickTip">Tip: Click phrases for audio/definition. Long press (Mobile) for audio only.</p>
+                        
+                        <!-- Sentence Container: Transparent Background -->
+                        <div id="modal-sentence-container" class="p-2 rounded-xl text-lg leading-loose flex flex-wrap gap-2 relative z-10 items-center">
+                            <!-- Populated by JS -->
+                        </div>
+
+                        <!-- MINI DICTIONARY PANEL -->
+                        <div id="mini-dictionary" class="hidden mt-3 p-4 rounded-xl bg-gray-50 dark:bg-slate-950 border border-gray-200 dark:border-slate-700 shadow-xl animate-[slideDown_0.2s_ease-out]">
+                             <div id="dict-loading" class="text-center py-2 text-gray-400 text-sm">
+                                 <i class="fas fa-circle-notch fa-spin mr-2"></i> Analyzing...
+                             </div>
+                             <div id="dict-content" class="hidden">
+                                 <div class="flex justify-between items-start mb-2">
+                                     <h4 class="font-bold text-gray-800 dark:text-gray-200 text-sm" id="dict-word">Word</h4>
+                                     <div class="flex gap-2">
+                                         <button onclick="playTTS(document.getElementById('dict-word').textContent)" class="text-indigo-500 hover:text-indigo-600"><i class="fas fa-volume-up"></i></button>
+                                         <button onclick="closeDictionary()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i class="fas fa-times text-xs"></i></button>
+                                     </div>
+                                 </div>
+                                 <ol id="dict-list" class="list-decimal list-inside text-sm text-gray-600 dark:text-gray-400 space-y-1 font-medium">
+                                     <!-- Items go here -->
+                                 </ol>
+                             </div>
+                        </div>
+
+                        <!-- Sentence Transcription -->
+                        <div id="modal-sentence-transcription-container" class="hidden mt-1 px-4">
+                            <p class="text-sm text-gray-500 dark:text-gray-400 font-mono" id="modal-sentence-transcription"></p>
+                        </div>
+                        
+                        <!-- Translation of Sentence -->
+                        <div id="modal-sentence-translation-container" class="hidden mt-2 p-2 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-900/30 rounded-lg">
+                             <p class="text-sm text-orange-800 dark:text-orange-200 italic"><i class="fas fa-language mr-1"></i> <span id="modal-sentence-translation"></span></p>
+                        </div>
+                        
+                        <!-- Legend for Chunks -->
+                        <div class="flex gap-2 mt-2 flex-wrap justify-center sm:justify-start">
+                            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-[#2563eb]"></div><span class="text-[10px] text-gray-500 dark:text-gray-400 font-bold" data-i18n="subj">Subject</span></div>
+                            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-[#dc2626]"></div><span class="text-[10px] text-gray-500 dark:text-gray-400 font-bold" data-i18n="verb">Verb</span></div>
+                            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-[#059669]"></div><span class="text-[10px] text-gray-500 dark:text-gray-400 font-bold" data-i18n="obj">Object</span></div>
+                            <div class="flex items-center gap-1.5"><div class="w-3 h-3 rounded bg-[#d97706]"></div><span class="text-[10px] text-gray-500 dark:text-gray-400 font-bold" data-i18n="modifier">Modifier</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Synonyms & Antonyms -->
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-gray-50 dark:bg-slate-900 p-3 rounded-xl border border-gray-100 dark:border-slate-700">
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-green-600 dark:text-green-400 mb-2"><i class="fas fa-check mr-1"></i> <span data-i18n="synonyms">Synonyms</span></h3>
+                            <ul id="modal-synonyms" class="text-sm text-gray-600 dark:text-gray-400 space-y-1"></ul>
+                        </div>
+                        <div class="bg-gray-50 dark:bg-slate-900 p-3 rounded-xl border border-gray-100 dark:border-slate-700">
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-red-500 dark:text-red-400 mb-2"><i class="fas fa-times mr-1"></i> <span data-i18n="antonyms">Antonyms</span></h3>
+                            <ul id="modal-antonyms" class="text-sm text-gray-600 dark:text-gray-400 space-y-1"></ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="h-6 sm:hidden"></div>
+        </div>
+    </div>
+
+    <!-- Network Container -->
+    <div id="network" class="bg-white dark:bg-slate-900 transition-colors duration-300"></div>
+
+    <script>
+        let GEMINI_API_KEY = "";
+        const usedWords = new Set();
+        const expandedNodes = new Set(); 
+        let network;
+        let nodes = new vis.DataSet();
+        let edges = new vis.DataSet();
+        let isProcessing = false;
+        let infoPanelOpen = false;
+        let holdTriggered = false; 
+
+        // Current Context for Lookup
+        let currentContextSentence = "";
+
+        // State for preferences
+        let isDarkMode = false;
+        let targetLang = "English";
+        let explainLang = "Turkish";
+        let interfaceLang = "en";
+        
+        // Voice State
+        let isVoiceEnabled = true;
+        let voiceSpeed = 1.0;
+        let availableVoices = [];
+
+        // Translation Dictionary
+        const i18n = {
+            en: {
+                settings: "Settings",
+                interfaceLang: "INTERFACE LANGUAGE",
+                targetLang: "TARGET LANGUAGE (Learning)",
+                explainLang: "EXPLANATION LANGUAGE",
+                controls: "Controls",
+                tap: "<strong>Tap:</strong> Expand Related",
+                longPress: "<strong>Long Press:</strong> Details",
+                colors: "Graph Colors (Word Class)",
+                noun: "Noun", verbType: "Verb", adj: "Adjective", adv: "Adverb",
+                pronoun: "Pronoun", prep: "Preposition", conj: "Conjunction", other: "Other",
+                definition: "Definition",
+                structure: "Structure Analysis",
+                synonyms: "Synonyms",
+                antonyms: "Antonyms",
+                subj: "Subject", verb: "Verb", obj: "Object", modifier: "Modifier",
+                loading: "Thinking...",
+                clickTip: "Tip: Click for definition. Long press (Mobile) for audio."
+            },
+            fr: {
+                settings: "Paramètres",
+                interfaceLang: "LANGUE DE L'INTERFACE",
+                targetLang: "LANGUE CIBLE (Apprentissage)",
+                explainLang: "LANGUE D'EXPLICATION",
+                controls: "Contrôles",
+                tap: "<strong>Taper:</strong> Étendre",
+                longPress: "<strong>Maintenir:</strong> Détails",
+                colors: "Couleurs (Classe grammaticale)",
+                noun: "Nom", verbType: "Verbe", adj: "Adjectif", adv: "Adverbe",
+                pronoun: "Pronom", prep: "Préposition", conj: "Conjonction", other: "Autre",
+                definition: "Définition",
+                structure: "Analyse de structure",
+                synonyms: "Synonymes",
+                antonyms: "Antonymes",
+                subj: "Sujet", verb: "Verbe", obj: "Objet", modifier: "Modificateur",
+                loading: "Réflexion...",
+                clickTip: "Astuce : Cliquez pour définir. Appui long pour l'audio."
+            },
+            es: {
+                settings: "Ajustes",
+                interfaceLang: "IDIOMA DE LA INTERFAZ",
+                targetLang: "IDIOMA OBJETIVO (Aprendizaje)",
+                explainLang: "IDIOMA DE EXPLICACIÓN",
+                controls: "Controles",
+                tap: "<strong>Tocar:</strong> Expandir",
+                longPress: "<strong>Mantener:</strong> Detalles",
+                colors: "Colores (Clase de palabra)",
+                noun: "Sustantivo", verbType: "Verbo", adj: "Adjetivo", adv: "Adverbio",
+                pronoun: "Pronombre", prep: "Preposición", conj: "Conjunción", other: "Otro",
+                definition: "Definición",
+                structure: "Análisis de estructura",
+                synonyms: "Sinónimos",
+                antonyms: "Antónimos",
+                subj: "Sujeto", verb: "Verbo", obj: "Objeto", modifier: "Modificador",
+                loading: "Pensando...",
+                clickTip: "Consejo: Clic para definir. Pulsación larga para audio."
+            },
+            de: {
+                settings: "Einstellungen",
+                interfaceLang: "OBERFLÄCHENSPRACHE",
+                targetLang: "ZIELSPRACHE (Lernen)",
+                explainLang: "ERKLÄRUNGSSPRACHE",
+                controls: "Steuerung",
+                tap: "<strong>Tippen:</strong> Erweitern",
+                longPress: "<strong>Gedrückt halten:</strong> Details",
+                colors: "Farben (Wortart)",
+                noun: "Nomen", verbType: "Verb", adj: "Adjektiv", adv: "Adverb",
+                pronoun: "Pronomen", prep: "Präposition", conj: "Konjunktion", other: "Andere",
+                definition: "Definition",
+                structure: "Strukturanalyse",
+                synonyms: "Synonyme",
+                antonyms: "Antonyme",
+                subj: "Subjekt", verb: "Verb", obj: "Objekt", modifier: "Modifikator",
+                loading: "Nachdenken...",
+                clickTip: "Tipp: Klicken zum Definieren. Lang drücken für Audio."
+            },
+            it: {
+                settings: "Impostazioni",
+                interfaceLang: "LINGUA INTERFACCIA",
+                targetLang: "LINGUA DI APPRENDIMENTO",
+                explainLang: "LINGUA DI SPIEGAZIONE",
+                controls: "Controlli",
+                tap: "<strong>Tocca:</strong> Espandi",
+                longPress: "<strong>Tieni premuto:</strong> Dettagli",
+                colors: "Colori (Classe di parole)",
+                noun: "Nome", verbType: "Verbo", adj: "Aggettivo", adv: "Avverbio",
+                pronoun: "Pronome", prep: "Preposizione", conj: "Congiunzione", other: "Altro",
+                definition: "Definizione",
+                structure: "Analisi della struttura",
+                synonyms: "Sinonimi",
+                antonyms: "Contrari",
+                subj: "Soggetto", verb: "Verbo", obj: "Oggetto", modifier: "Modificatore",
+                loading: "Pensando...",
+                clickTip: "Suggerimento: Clicca per definire. Tieni premuto per l'audio."
+            },
+            tr: {
+                settings: "Ayarlar",
+                interfaceLang: "ARAYÜZ DİLİ",
+                targetLang: "HEDEF DİL (Öğrenilen)",
+                explainLang: "AÇIKLAMA DİLİ",
+                controls: "Kontroller",
+                tap: "<strong>Dokun:</strong> Kelime Türet",
+                longPress: "<strong>Basılı Tut:</strong> Detaylar",
+                colors: "Renk Kodları (Kelime Türü)",
+                noun: "İsim", verbType: "Fiil", adj: "Sıfat", adv: "Zarf",
+                pronoun: "Zamir", prep: "Edat", conj: "Bağlaç", other: "Diğer",
+                definition: "Tanım",
+                structure: "Cümle Yapısı",
+                synonyms: "Eş Anlamlılar",
+                antonyms: "Zıt Anlamlılar",
+                subj: "Özne", verb: "Yüklem", obj: "Nesne", modifier: "Niteleyici",
+                loading: "Düşünüyor...",
+                clickTip: "İpucu: Anlam için tıklayın. Ses için basılı tutun."
+            }
+        };
+
+        window.onload = () => {
+            const savedKey = localStorage.getItem("GEMINI_KEY");
+            if(savedKey) document.getElementById('api-key-input').value = savedKey;
+            
+            const savedTarget = localStorage.getItem("TARGET_LANG");
+            if(savedTarget) {
+                targetLang = savedTarget;
+                document.getElementById('target-lang-input').value = targetLang;
+            }
+            
+            const savedExplain = localStorage.getItem("EXPLAIN_LANG");
+            if(savedExplain) {
+                explainLang = savedExplain;
+                document.getElementById('explain-lang-input').value = explainLang;
+            }
+
+            const savedInterface = localStorage.getItem("INTERFACE_LANG");
+            if(savedInterface && i18n[savedInterface]) {
+                interfaceLang = savedInterface;
+                document.getElementById('interface-lang-select').value = interfaceLang;
+            }
+
+            // Load Voice Settings
+            const savedVoiceEnabled = localStorage.getItem("VOICE_ENABLED");
+            if (savedVoiceEnabled !== null) {
+                isVoiceEnabled = savedVoiceEnabled === 'true';
+                updateVoiceToggleUI();
+            }
+            
+            const savedSpeed = localStorage.getItem("VOICE_SPEED");
+            if (savedSpeed !== null) {
+                voiceSpeed = parseFloat(savedSpeed);
+                document.getElementById('voice-speed').value = voiceSpeed;
+                document.getElementById('speed-display').textContent = voiceSpeed + 'x';
+            }
+
+            // Init Voices
+            if ('speechSynthesis' in window) {
+                // Chrome loads voices asynchronously
+                window.speechSynthesis.onvoiceschanged = () => {
+                    availableVoices = window.speechSynthesis.getVoices();
+                };
+                availableVoices = window.speechSynthesis.getVoices();
+            }
+
+            // Apply translations initially
+            updateInterfaceText();
+
+            // Check system dark mode preference
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                toggleDarkMode();
+            }
+
+            // Add this inside window.onload or at the bottom of your <script>
+            document.body.addEventListener('touchstart', function() {
+                const synth = window.speechSynthesis;
+                // Play a silent, empty sound on the first touch to unlock the audio engine
+                if (synth) {
+                    const u = new SpeechSynthesisUtterance("");
+                    u.volume = 0; // Silent
+                    synth.speak(u);
+                }
+            }, { once: true }); // Only runs once
+
+            // Focus on start input
+            document.getElementById('start-input').focus();
+            
+            // Add event listeners for language inputs
+            document.getElementById('target-lang-input').addEventListener('change', (e) => {
+                targetLang = e.target.value.trim() || "English";
+                localStorage.setItem("TARGET_LANG", targetLang);
+            });
+            
+            document.getElementById('explain-lang-input').addEventListener('change', (e) => {
+                explainLang = e.target.value.trim() || "Turkish";
+                localStorage.setItem("EXPLAIN_LANG", explainLang);
+            });
+        };
+
+        function changeInterfaceLang(lang) {
+            interfaceLang = lang;
+            localStorage.setItem("INTERFACE_LANG", lang);
+            updateInterfaceText();
+        }
+
+        function updateInterfaceText() {
+            const dict = i18n[interfaceLang];
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (dict[key]) {
+                    el.innerHTML = dict[key];
+                }
+            });
+        }
+
+        // --- VOICE SETTINGS HANDLERS ---
+        function toggleVoice() {
+            isVoiceEnabled = !isVoiceEnabled;
+            localStorage.setItem("VOICE_ENABLED", isVoiceEnabled);
+            updateVoiceToggleUI();
+        }
+
+        function updateVoiceToggleUI() {
+            const btn = document.getElementById('voice-toggle-btn');
+            const circle = document.getElementById('voice-toggle-circle');
+            
+            if (isVoiceEnabled) {
+                btn.classList.remove('bg-gray-300');
+                btn.classList.add('bg-green-500');
+                circle.classList.remove('left-1');
+                circle.classList.add('left-6');
+            } else {
+                btn.classList.remove('bg-green-500');
+                btn.classList.add('bg-gray-300');
+                circle.classList.remove('left-6');
+                circle.classList.add('left-1');
+            }
+        }
+
+        function updateSpeedDisplay(val) {
+            voiceSpeed = parseFloat(val);
+            document.getElementById('speed-display').textContent = val + 'x';
+            localStorage.setItem("VOICE_SPEED", voiceSpeed);
+        }
+
+        // --- ROBUST TTS FUNCTIONALITY ---
+// --- ROBUST TTS FUNCTIONALITY ---
+        
+        function getLangCode(langName) {
+            if (!langName) return 'en-US';
+            const lower = langName.toLowerCase().trim();
+            
+            // Common Languages Mapping
+            if (lower.includes('english')) return 'en-US';
+            if (lower.includes('spanish') || lower.includes('español')) return 'es-ES';
+            if (lower.includes('french') || lower.includes('français')) return 'fr-FR';
+            if (lower.includes('german') || lower.includes('deutsch')) return 'de-DE';
+            if (lower.includes('italian') || lower.includes('italiano')) return 'it-IT';
+            if (lower.includes('turkish') || lower.includes('türkçe')) return 'tr-TR';
+            if (lower.includes('japanese')) return 'ja-JP';
+            if (lower.includes('chinese')) return 'zh-CN';
+            if (lower.includes('korean')) return 'ko-KR';
+            if (lower.includes('russian')) return 'ru-RU';
+            if (lower.includes('arabic')) return 'ar-SA';
+            if (lower.includes('portuguese') || lower.includes('português')) return 'pt-BR';
+            if (lower.includes('dutch') || lower.includes('nederlands')) return 'nl-NL';
+            if (lower.includes('polish') || lower.includes('polski')) return 'pl-PL';
+            if (lower.includes('indonesian')) return 'id-ID';
+            if (lower.includes('hindi')) return 'hi-IN';
+            
+            return 'en-US'; // Default fallback
+        }
+
+// --- ROBUST TTS FUNCTIONALITY ---
+        
+        function getLangCode(langName) {
+            if (!langName) return 'en-US';
+            const lower = langName.toLowerCase().trim();
+            
+            // Common Languages Mapping
+            if (lower.includes('english')) return 'en-US';
+            if (lower.includes('spanish') || lower.includes('español')) return 'es-ES';
+            if (lower.includes('french') || lower.includes('français')) return 'fr-FR';
+            if (lower.includes('german') || lower.includes('deutsch')) return 'de-DE';
+            if (lower.includes('italian') || lower.includes('italiano')) return 'it-IT';
+            if (lower.includes('turkish') || lower.includes('türkçe')) return 'tr-TR';
+            if (lower.includes('japanese')) return 'ja-JP';
+            if (lower.includes('chinese')) return 'zh-CN';
+            if (lower.includes('korean')) return 'ko-KR';
+            if (lower.includes('russian')) return 'ru-RU';
+            if (lower.includes('arabic')) return 'ar-SA';
+            if (lower.includes('portuguese') || lower.includes('português')) return 'pt-BR';
+            if (lower.includes('dutch') || lower.includes('nederlands')) return 'nl-NL';
+            if (lower.includes('polish') || lower.includes('polski')) return 'pl-PL';
+            if (lower.includes('indonesian')) return 'id-ID';
+            if (lower.includes('hindi')) return 'hi-IN';
+            
+            return 'en-US'; // Default fallback
+        }
+
+        function playTTS(text) {
+            // 1. Check if voice is enabled in settings
+            if (!isVoiceEnabled) return;
+
+            // 2. Check browser support
+            if (!('speechSynthesis' in window)) {
+                console.warn("TTS not supported in this browser");
+                return;
+            }
+
+            const synth = window.speechSynthesis;
+
+            // 3. Cancel any currently playing audio to prevent overlap
+            if (synth.speaking) {
+                synth.cancel();
+            }
+
+            // 4. Get the current target language from the global variable or input
+            // We re-fetch input value to be safe
+            const currentTargetRaw = document.getElementById('target-lang-input').value || targetLang;
+            const targetCode = getLangCode(currentTargetRaw);
+
+            // 5. Create the utterance
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = targetCode;
+            utterance.rate = voiceSpeed;
+
+            // 6. Voice Selection Strategy
+            // We fetch voices *right now* to ensure we have the loaded list
+            let voices = synth.getVoices();
+
+            // Retry fetching voices if empty (Chrome quirk)
+            if (voices.length === 0) {
+                setTimeout(() => {
+                    playTTS(text); // Try once more after a split second
+                }, 100);
+                return;
+            }
+
+            // A. Try to find an exact match (e.g., 'en-US')
+            let preferredVoice = voices.find(v => v.lang === targetCode);
+
+            // B. If no exact match, try the base language (e.g., find any 'en' for 'en-US')
+            if (!preferredVoice) {
+                const baseLang = targetCode.split('-')[0];
+                preferredVoice = voices.find(v => v.lang.startsWith(baseLang));
+            }
+
+            // C. Apply voice if found (otherwise browser uses default for that .lang)
+            if (preferredVoice) {
+                utterance.voice = preferredVoice;
+            }
+
+            // 7. iOS/Mobile Fix: Ensure volume is explicit
+            utterance.volume = 1.0; 
+
+            // 8. Speak
+            synth.speak(utterance);
+        }
+        // --- THEME & LANGUAGE HANDLERS ---
+
+        function toggleDarkMode() {
+            isDarkMode = !isDarkMode;
+            document.documentElement.classList.toggle('dark');
+            
+            const icon = document.getElementById('theme-icon');
+            if (isDarkMode) {
+                icon.classList.remove('fa-moon');
+                icon.classList.add('fa-sun');
+            } else {
+                icon.classList.remove('fa-sun');
+                icon.classList.add('fa-moon');
+            }
+
+            if (network) {
+                updateNetworkOptions();
+                network.redraw(); 
+            }
+        }
+
+        function toggleInfoPanel() {
+            const panel = document.getElementById('info-panel');
+            infoPanelOpen = !infoPanelOpen;
+            panel.classList.toggle('-translate-x-[120%]', !infoPanelOpen);
+            panel.classList.toggle('translate-x-0', infoPanelOpen);
+        }
+
+        function closeAllMenus() {
+            document.getElementById('backdrop').classList.remove('active');
+            toggleInfoPanel(); // close panel if open
+        }
+
+        // --- LOGIC ---
+
+        function extractJSON(text) {
+            const jsonMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/); 
+            if (!jsonMatch) return null;
+            try { return JSON.parse(jsonMatch[0]); } catch (e) { return null; }
+        }
+
+        async function callGemini(promptText) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] })
+                });
+                if (!response.ok) throw new Error("API Error");
+                const data = await response.json();
+                return extractJSON(data.candidates?.[0]?.content?.parts?.[0]?.text || "");
+            } catch (error) {
+                alert("Connection Error. Check API Key in Menu.");
+                return null;
+            }
+        }
+
+        function getPOSColor(pos) {
+            const p = pos?.toLowerCase() || 'other';
+            if (p.includes('noun')) return { bg: '#dbeafe', border: '#3b82f6', text: '#1e3a8a' }; // Blue
+            if (p.includes('verb') && !p.includes('adverb')) return { bg: '#fee2e2', border: '#ef4444', text: '#991b1b' }; // Red
+            if (p.includes('adjective')) return { bg: '#dcfce7', border: '#22c55e', text: '#166534' }; // Green
+            if (p.includes('adverb')) return { bg: '#fef3c7', border: '#eab308', text: '#854d0e' }; // Yellow
+            if (p.includes('pronoun')) return { bg: '#f3e8ff', border: '#a855f7', text: '#6b21a8' }; // Purple
+            if (p.includes('preposition') || p.includes('preposi')) return { bg: '#fce7f3', border: '#ec4899', text: '#9d174d' }; // Pink
+            if (p.includes('conjunction')) return { bg: '#ffedd5', border: '#f97316', text: '#9a3412' }; // Orange
+            if (p.includes('interjection')) return { bg: '#ccfbf1', border: '#14b8a6', text: '#115e59' }; // Teal
+            if (p.includes('phrase') || p.includes('phrasal')) return { bg: '#e0f2fe', border: '#0ea5e9', text: '#075985' }; // Light Blue
+            return { bg: '#f3f4f6', border: '#94a3b8', text: '#475569' };
+        }
+
+        function createSVG(label, pos, transcription) {
+            const colors = getPOSColor(pos);
+            const width = 512;
+            const height = 512;
+            const cx = width / 2;
+            const cy = height / 2;
+            const r = 200; 
+            const strokeWidth = 12; 
+            
+            const hasTranscription = transcription && transcription.length > 0 && transcription !== label;
+            
+            let mainFontSize = 80;
+            if (label.length > 6) mainFontSize = 70;
+            if (label.length > 9) mainFontSize = 60;
+            if (label.length > 12) mainFontSize = 50;
+
+            let mainY = cy + (mainFontSize/3);
+
+            let subText = "";
+            if (hasTranscription) {
+                mainY = cy - 20; 
+                const subFontSize = mainFontSize * 0.6;
+                const subY = cy + 50;
+                subText = `<text x="${cx}" y="${subY}" text-anchor="middle" font-family="Inter, sans-serif" font-weight="500" font-size="${subFontSize}" fill="${colors.text}" opacity="0.8">${transcription}</text>`;
+            }
+
+            return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`
+            <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+                <defs>
+                    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                        <feDropShadow dx="0" dy="8" stdDeviation="10" flood-opacity="0.15"/>
+                    </filter>
+                </defs>
+                <circle cx="${cx}" cy="${cy}" r="${r}" fill="${colors.bg}" stroke="${colors.border}" stroke-width="${strokeWidth}" filter="url(#shadow)" />
+                <text x="${cx}" y="${mainY}" text-anchor="middle" font-family="Inter, 'Noto Sans JP', 'Noto Sans Arabic', sans-serif" font-weight="700" font-size="${mainFontSize}" fill="${colors.text}">${label}</text>
+                ${subText}
+            </svg>`);
+        }
+
+        function updateNetworkOptions() {
+            if(!network) return;
+            const edgeColor = isDarkMode ? '#475569' : '#e2e8f0';
+            const edgeHighlight = isDarkMode ? '#94a3b8' : '#cbd5e1';
+            
+            network.setOptions({
+                edges: {
+                    color: { color: edgeColor, highlight: edgeHighlight }
+                }
+            });
+        }
+
+        function initNetwork() {
+            const container = document.getElementById('network');
+            const data = { nodes: nodes, edges: edges };
+            
+            const edgeColor = isDarkMode ? '#475569' : '#e2e8f0';
+            const edgeHighlight = isDarkMode ? '#94a3b8' : '#cbd5e1';
+
+            const options = {
+                nodes: {
+                    shape: 'image',
+                    size: 60, 
+                    borderWidth: 0,
+                },
+                edges: {
+                    width: 3,
+                    color: { color: edgeColor, highlight: edgeHighlight },
+                    smooth: { type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.5 },
+                    length: 150
+                },
+                physics: {
+                    stabilization: false,
+                    barnesHut: { gravitationalConstant: -5000, springLength: 150, springConstant: 0.04 }
+                },
+                interaction: { 
+                    hover: false, 
+                    dragNodes: true,
+                    zoomView: true,
+                    dragView: true,
+                    multiselect: false
+                }
+            };
+
+            network = new vis.Network(container, data, options);
+
+            network.on("click", function(params) {
+                if (holdTriggered) {
+                    holdTriggered = false;
+                    return;
+                }
+                if (params.nodes.length > 0) {
+                    const nodeId = params.nodes[0];
+                    expandNode(nodeId);
+                }
+            });
+
+            network.on("hold", function(params) {
+                if (params.nodes.length > 0) {
+                    holdTriggered = true;
+                    openDetails(params.nodes[0]);
+                }
+            });
+
+            network.on("oncontextmenu", function(params) {
+                params.event.preventDefault();
+                const nodeId = network.getNodeAt(params.pointer.DOM);
+                if (nodeId) {
+                    holdTriggered = true;
+                    openDetails(nodeId);
+                }
+            });
+        }
+
+        function handleStartInput(e) {
+            if (e.key === 'Enter') {
+                const word = e.target.value.trim();
+                if(word) startGame(word);
+            }
+        }
+        
+        function resetGame() {
+            nodes.clear();
+            edges.clear();
+            usedWords.clear();
+            expandedNodes.clear();
+            isProcessing = false;
+
+            const container = document.getElementById('initial-input-container');
+            const input = document.getElementById('start-input');
+            const spinner = document.getElementById('start-spinner');
+            const globalLoader = document.getElementById('global-loader');
+
+            container.style.display = 'block';
+            requestAnimationFrame(() => {
+                container.classList.remove('fade-out');
+            });
+
+            input.disabled = false;
+            input.value = '';
+            input.classList.remove('opacity-50');
+            input.focus();
+            
+            spinner.classList.add('hidden');
+            globalLoader.classList.add('hidden');
+            closeModal();
+            
+            if(network) {
+                network.setData({nodes: nodes, edges: edges});
+            }
+        }
+
+        async function startGame(word) {
+            GEMINI_API_KEY = document.getElementById('api-key-input').value.trim();
+            targetLang = document.getElementById('target-lang-input').value.trim() || "English";
+            explainLang = document.getElementById('explain-lang-input').value.trim() || "Turkish";
+            
+            if (!GEMINI_API_KEY) {
+                toggleInfoPanel();
+                document.getElementById('api-key-input').focus();
+                alert("Please paste your API Key in the menu to continue.");
+                return;
+            }
+
+            localStorage.setItem("GEMINI_KEY", GEMINI_API_KEY);
+            localStorage.setItem("TARGET_LANG", targetLang);
+            localStorage.setItem("EXPLAIN_LANG", explainLang);
+            
+            const input = document.getElementById('start-input');
+            const spinner = document.getElementById('start-spinner');
+            const container = document.getElementById('initial-input-container');
+
+            input.disabled = true;
+            input.value = ""; 
+            input.classList.add('opacity-50');
+            spinner.classList.remove('hidden');
+            
+            const posPrompt = `
+                Analyze the word "${word}" (Language: ${targetLang}).
+                Return JSON: 
+                {
+                    "pos": "Noun|Verb|Adjective|Adverb",
+                    "transcription": "Romanization if non-Latin (e.g. Romaji). Empty if Latin."
+                }
+            `;
+            let startPos = 'noun'; 
+            let startTrans = '';
+
+            try {
+                const data = await callGemini(posPrompt);
+                if (data) {
+                    if (data.pos) startPos = data.pos;
+                    if (data.transcription) startTrans = data.transcription;
+                }
+            } catch(e) {
+                console.error("Could not fetch initial POS", e);
+            }
+
+            if (!network) {
+                initNetwork();
+            } else {
+                network.setData({nodes: nodes, edges: edges});
+            }
+            
+            usedWords.add(word.toLowerCase());
+            
+            const initialId = 1;
+            nodes.add({
+                id: initialId,
+                word: word,
+                image: createSVG(word, startPos, startTrans), 
+                level: 0
+            });
+
+            container.classList.add('fade-out');
+            setTimeout(() => {
+                container.style.display = 'none';
+            }, 500);
+
+            expandNode(initialId);
+        }
+
+        async function expandNode(nodeId) {
+            if (isProcessing) return;
+
+            if (expandedNodes.has(nodeId)) {
+                network.focus(nodeId, { animation: true, scale: 1.2 });
+                return;
+            }
+
+            isProcessing = true;
+            document.getElementById('global-loader').classList.remove('hidden');
+            document.getElementById('loader-text').innerHTML = i18n[interfaceLang].loading;
+
+            const parentNode = nodes.get(nodeId);
+            const excluded = Array.from(usedWords).join(', ');
+            
+            const prompt = `
+                Current word: "${parentNode.word}" (Language: ${targetLang}).
+                Task: Generate 5 distinct, related words in the language "${targetLang}".
+                Rules:
+                1. Do NOT use: [${excluded}].
+                2. Return valid JSON ARRAY of objects: 
+                   [{
+                       "word": "string", 
+                       "pos": "Noun|Verb|Adjective|Adverb|Pronoun|Preposition|Conjunction|Interjection|Phrase",
+                       "transcription": "Romanization if non-Latin script. Empty string if Latin."
+                   }]
+                3. The "pos" must be the specific Part of Speech in English.
+                4. STRICTLY single words only inside the "word" field. No sentences.
+            `;
+
+            const results = await callGemini(prompt);
+
+            if (results && Array.isArray(results)) {
+                const newNodes = [];
+                const newEdges = [];
+                const parentPos = network.getPositions([nodeId])[nodeId];
+
+                results.forEach(item => {
+                    const w = item.word.trim();
+                    if (usedWords.has(w.toLowerCase())) return;
+                    usedWords.add(w.toLowerCase());
+
+                    const newId = Date.now() + Math.random();
+                    
+                    newNodes.push({
+                        id: newId,
+                        word: w, 
+                        image: createSVG(w, item.pos, item.transcription),
+                        x: parentPos.x + (Math.random() - 0.5) * 50,
+                        y: parentPos.y + (Math.random() - 0.5) * 50
+                    });
+
+                    newEdges.push({
+                        from: nodeId,
+                        to: newId,
+                        color: { color: getPOSColor(item.pos).border, opacity: 0.5 }
+                    });
+                });
+
+                if (newNodes.length > 0) {
+                    nodes.add(newNodes);
+                    edges.add(newEdges);
+                    expandedNodes.add(nodeId);
+                }
+            }
+
+            document.getElementById('global-loader').classList.add('hidden');
+            isProcessing = false;
+        }
+
+        async function openDetails(nodeId) {
+            const word = nodes.get(nodeId).word; 
+            const modal = document.getElementById('info-modal');
+            const loader = document.getElementById('modal-loader');
+            const content = document.getElementById('modal-content');
+            
+            modal.classList.remove('hidden');
+            document.getElementById('backdrop').classList.add('active');
+            
+            loader.classList.remove('hidden');
+            content.classList.add('hidden');
+            
+            // Reset fields
+            document.getElementById('modal-word').textContent = word;
+            document.getElementById('modal-pos').textContent = "...";
+            document.getElementById('modal-sentence-translation-container').classList.add('hidden');
+            document.getElementById('modal-sentence-transcription-container').classList.add('hidden');
+            
+            closeDictionary();
+
+            // --- STRICT CHUNKING PROMPT ---
+            const prompt = `
+                Analyze the word: "${word}" (Language: ${targetLang}).
+                
+                STRICTLY Return this JSON Structure:
+                {
+                    "definition": "Definition in ${explainLang}",
+                    "part_of_speech": "Noun/Verb/Adjective/etc (in English)",
+                    "synonyms": ["syn1", "syn2", "syn3"],
+                    "antonyms": ["ant1", "ant2"],
+                    "sentence_structure": [
+                        { "text": "The huge tree", "role": "subject" },
+                        { "text": "was standing", "role": "verb" },
+                        { "text": "in the park", "role": "modifier" }
+                    ],
+                    "sentence_translation": "Sentence translation in ${explainLang}",
+                    "sentence_transcription": "Full sentence Romanization/transcription if non-Latin. Empty string if Latin."
+                }
+
+                CRITICAL INSTRUCTIONS FOR SENTENCE:
+                1. Create a natural example sentence using "${word}" in "${targetLang}".
+                2. CHUNK IT CONTEXTUALLY: Do NOT break it word-by-word. Break it into PHRASES.
+                   - Subjects: "The big dog" (not "The", "big", "dog")
+                   - Verbs: "has given up" (Phrasal verbs MUST be one chunk)
+                   - Objects: "the red ball"
+                   - Modifiers: "in the morning", "very quickly"
+                3. 100% COVERAGE: Every single word in the sentence must be inside a chunk. Do not skip any words.
+                4. Roles: 'subject', 'verb', 'object', 'modifier' (use modifier for adverbs/prepositional phrases), 'other'.
+            `;
+
+            const data = await callGemini(prompt);
+
+            loader.classList.add('hidden');
+            content.classList.remove('hidden');
+
+            if (data) {
+                document.getElementById('modal-pos').textContent = data.part_of_speech;
+                document.getElementById('modal-definition').textContent = data.definition;
+                
+                // Store sentence for context
+                currentContextSentence = data.sentence_structure.map(c => c.text).join(" ");
+
+                // Render Colored Interactive Sentence
+                const sentenceContainer = document.getElementById('modal-sentence-container');
+                sentenceContainer.innerHTML = '';
+                if (data.sentence_structure) {
+                    data.sentence_structure.forEach(chunk => {
+                        const span = document.createElement('div'); // Use div for blocks
+                        span.textContent = chunk.text; 
+                        span.className = 'word-chunk '; 
+                        
+                        // Add class based on role with fuzzy matching
+                        const role = chunk.role.toLowerCase();
+                        if (role.includes('subj')) span.classList.add('role-subject');
+                        else if (role.includes('verb') || role.includes('predicat')) span.classList.add('role-verb');
+                        else if (role.includes('object')) span.classList.add('role-object');
+                        else if (role.includes('mod') || role.includes('adj') || role.includes('adv')) span.classList.add('role-modifier');
+                        else span.classList.add('role-other');
+                        
+                        // --- INTERACTION LOGIC ---
+                        let pressTimer;
+                        
+                        // Touch Start (Mobile)
+                        span.addEventListener('touchstart', (e) => {
+                            // Don't prevent default immediately to allow scrolling, but prevent context menu if held
+                            pressTimer = setTimeout(() => {
+                                // Long Press detected
+                                playTTS(chunk.text);
+                                // Visual feedback
+                                span.style.transform = "scale(0.95)";
+                                setTimeout(() => span.style.transform = "", 150);
+                            }, 500); // 500ms for long press
+                        });
+
+                        span.addEventListener('touchend', (e) => {
+                             clearTimeout(pressTimer);
+                        });
+
+                        // Click (Desktop & Short Tap Mobile)
+                        span.onclick = function() {
+                            // Clear others
+                            document.querySelectorAll('.word-chunk').forEach(el => el.classList.remove('active-word'));
+                            // Set active
+                            span.classList.add('active-word');
+                            
+                            // Play Audio (Click)
+                            playTTS(chunk.text);
+                            
+                            // Lookup (Click)
+                            lookupWord(chunk.text);
+                        };
+
+                        sentenceContainer.appendChild(span);
+                    });
+                }
+
+                if (data.sentence_transcription) {
+                    const transBox = document.getElementById('modal-sentence-transcription-container');
+                    const transText = document.getElementById('modal-sentence-transcription');
+                    transBox.classList.remove('hidden');
+                    transText.textContent = data.sentence_transcription;
+                }
+
+                if (data.sentence_translation) {
+                    const transContainer = document.getElementById('modal-sentence-translation-container');
+                    const transText = document.getElementById('modal-sentence-translation');
+                    transContainer.classList.remove('hidden');
+                    transText.textContent = data.sentence_translation;
+                }
+
+                const synList = document.getElementById('modal-synonyms');
+                synList.innerHTML = data.synonyms?.map(s => `<li>• ${s}</li>`).join('') || '<li>None</li>';
+
+                const antList = document.getElementById('modal-antonyms');
+                antList.innerHTML = data.antonyms?.map(a => `<li>• ${a}</li>`).join('') || '<li>None</li>';
+            }
+        }
+
+        async function lookupWord(clickedWord) {
+            const dictPanel = document.getElementById('mini-dictionary');
+            const dictLoading = document.getElementById('dict-loading');
+            const dictContent = document.getElementById('dict-content');
+            const dictWord = document.getElementById('dict-word');
+            const dictList = document.getElementById('dict-list');
+
+            // Show Panel
+            dictPanel.classList.remove('hidden');
+            dictLoading.classList.remove('hidden');
+            dictContent.classList.add('hidden');
+            
+            // Clean word
+            dictWord.textContent = clickedWord;
+
+            const prompt = `
+                Context: The user clicked the phrase/chunk "${clickedWord}" in the sentence "${currentContextSentence}".
+                Languages: Target="${targetLang}", Explain="${explainLang}".
+                Task:
+                1. If the chunk is an idiom/phrasal verb, define the WHOLE phrase.
+                2. Provide 3 short, distinct meanings/translations in "${explainLang}".
+                
+                Return JSON: { "meanings": ["meaning 1", "meaning 2", "meaning 3"] }
+            `;
+
+            try {
+                const data = await callGemini(prompt);
+                
+                dictLoading.classList.add('hidden');
+                dictContent.classList.remove('hidden');
+                
+                if (data && data.meanings) {
+                    dictList.innerHTML = data.meanings.map(m => `<li>${m}</li>`).join('');
+                } else {
+                    dictList.innerHTML = `<li>No translation found.</li>`;
+                }
+            } catch (e) {
+                dictLoading.classList.add('hidden');
+                dictContent.classList.remove('hidden');
+                dictList.innerHTML = `<li>Error looking up word.</li>`;
+            }
+        }
+
+        function closeDictionary() {
+            document.getElementById('mini-dictionary').classList.add('hidden');
+            document.querySelectorAll('.word-chunk').forEach(el => el.classList.remove('active-word'));
+        }
+
+        function closeModal() {
+            document.getElementById('info-modal').classList.add('hidden');
+            document.getElementById('backdrop').classList.remove('active');
+            closeDictionary();
+        }
+
+        function resetCamera() { network.fit({ animation: true }); }
+        
+        function exportGraph() {
+             setTimeout(() => {
+                const canvas = document.querySelector('canvas');
+                const link = document.createElement('a');
+                link.download = `word-web.png`;
+                link.href = canvas.toDataURL();
+                link.click();
+            }, 100);
+        }
+    </script>
+</body>
+</html>
+
